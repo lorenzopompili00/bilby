@@ -5,6 +5,7 @@ import scipy.stats
 from scipy.special import erfinv
 
 from .base import Prior, PriorException
+from .conditional import conditional_prior_factory
 from ..utils import logger, infer_args_from_method, get_dict_with_properties
 from ..utils import random
 
@@ -360,6 +361,8 @@ class MultivariateGaussianDist(BaseJointPriorDist):
         covs=None,
         weights=None,
         bounds=None,
+        eigvectors=None,
+        sqeigvalues=None,
     ):
         """
         A class defining a multi-variate Gaussian, allowing multiple modes for
@@ -427,6 +430,11 @@ class MultivariateGaussianDist(BaseJointPriorDist):
         self.sqeigvalues = []  # square root of the eigenvalues
         self.mvn = []  # list of multivariate normal distributions
 
+        self.name = None
+        self.latex_label = None
+        self.unit = None
+        self.boundary = None
+
         # put values in lists if required
         if nmodes == 1:
             if mus is not None:
@@ -467,6 +475,11 @@ class MultivariateGaussianDist(BaseJointPriorDist):
                 elif isinstance(weights, list):
                     if len(weights) != 1:
                         raise ValueError("Wrong number of weights given")
+
+            if eigvectors is not None:
+                self.eigvectors.append(eigvectors)
+            if sqeigvalues is not None:
+                self.sqeigvalues.append(sqeigvalues)
 
         for val in [mus, sigmas, covs, corrcoefs, weights]:
             if val is not None and not isinstance(val, list):
@@ -741,23 +754,23 @@ class JointPrior(Prior):
         unit: str
             See superclass
         """
-        if not isinstance(dist, BaseJointPriorDist):
-            raise TypeError(
-                "Must supply a JointPriorDist object instance to be shared by all joint params"
-            )
+        # if not isinstance(dist, BaseJointPriorDist):
+        #     raise TypeError(
+        #         "Must supply a JointPriorDist object instance to be shared by all joint params"
+        #     )
 
-        if name not in dist.names:
-            raise ValueError(
-                "'{}' is not a parameter in the JointPriorDist".format(name)
-            )
+        # if name not in dist.names:
+        #     raise ValueError(
+        #         "'{}' is not a parameter in the JointPriorDist".format(name)
+        #     )
 
         self.dist = dist
         super(JointPrior, self).__init__(
             name=name,
             latex_label=latex_label,
             unit=unit,
-            minimum=dist.bounds[name][0],
-            maximum=dist.bounds[name][1],
+            # minimum=dist.bounds[name][0],
+            # maximum=dist.bounds[name][1],
         )
 
     @property
@@ -767,7 +780,7 @@ class JointPrior(Prior):
     @minimum.setter
     def minimum(self, minimum):
         self._minimum = minimum
-        self.dist.bounds[self.name] = (minimum, self.dist.bounds[self.name][1])
+        # self.dist.bounds[self.name] = (minimum, self.dist.bounds[self.name][1])
 
     @property
     def maximum(self):
@@ -776,7 +789,7 @@ class JointPrior(Prior):
     @maximum.setter
     def maximum(self, maximum):
         self._maximum = maximum
-        self.dist.bounds[self.name] = (self.dist.bounds[self.name][0], maximum)
+        # self.dist.bounds[self.name] = (self.dist.bounds[self.name][0], maximum)
 
     def rescale(self, val, **kwargs):
         """
@@ -820,12 +833,12 @@ class JointPrior(Prior):
             A sample from the prior parameter.
         """
 
-        if self.name in self.dist.sampled_parameters:
-            logger.warning(
-                "You have already drawn a sample from parameter "
-                "'{}'. The same sample will be "
-                "returned".format(self.name)
-            )
+        # if self.name in self.dist.sampled_parameters:
+        #     logger.warning(
+        #         "You have already drawn a sample from parameter "
+        #         "'{}'. The same sample will be "
+        #         "returned".format(self.name)
+        #     )
 
         if len(self.dist.current_sample) == 0:
             # generate a sample
@@ -938,3 +951,39 @@ class MultivariateNormal(MultivariateGaussian):
 
 class JointPriorDistError(PriorException):
     """Class for Error handling of JointPriorDists for JointPriors"""
+
+#***************************************************************************************************
+
+try:
+    from pyseobnr.eob.fits.mdn import mdn_condition_func
+except:
+    pass
+
+class ConditionalMultivariateGaussianDist(conditional_prior_factory(MultivariateGaussianDist)):
+    pass
+
+
+class ConditionalMultivariateGaussian(JointPrior):
+    def __init__(self, dist, name=None, latex_label=None, unit=None):
+        # if not isinstance(dist, ConditionalMultivariateGaussianDist) or isinstance(dist, MDN_prior):
+        #     raise JointPriorDistError(
+        #         "dist object must be instance of ConditionalMultivariateGaussianDist"
+        #     )
+        super(ConditionalMultivariateGaussian, self).__init__(
+            dist=dist, name=name, latex_label=latex_label, unit=unit
+        )
+        
+        self.condition_func = mdn_condition_func
+        self.required_variables = ["mass_ratio", "chi_1", "chi_2"]
+
+
+class MDNPrior(ConditionalMultivariateGaussianDist):
+    def __init__(self, names=["dTpeak", "ddSO"], mus=np.array([0.0, 0.0]), covs=np.array([[1.0, 0.0], [0.0, 1.0]])):
+
+        self.names=names
+        self.mus=mus
+        self.covs=covs
+        self.condition_func = mdn_condition_func
+        self._required_variables = ["mass_ratio", "chi_1", "chi_2"]
+
+        super(MDNPrior, self).__init__(condition_func = self.condition_func, names=names, mus=mus, covs=covs)

@@ -1,3 +1,5 @@
+import numpy as np
+
 from .base import Prior, PriorException
 from .interpolated import Interped
 from .analytical import DeltaFunction, PowerLaw, Uniform, LogUniform, \
@@ -9,7 +11,7 @@ from ..utils import infer_args_from_method, infer_parameters_from_function
 def conditional_prior_factory(prior_class):
     class ConditionalPrior(prior_class):
         def __init__(self, condition_func, name=None, latex_label=None, unit=None,
-                     boundary=None, **reference_params):
+                     boundary=None, names=None, **reference_params):
             """
 
             Parameters
@@ -49,10 +51,17 @@ def conditional_prior_factory(prior_class):
             if 'boundary' in infer_args_from_method(super(ConditionalPrior, self).__init__):
                 super(ConditionalPrior, self).__init__(name=name, latex_label=latex_label,
                                                        unit=unit, boundary=boundary, **reference_params)
+            elif 'names' in infer_args_from_method(super(ConditionalPrior, self).__init__):
+                super(ConditionalPrior, self).__init__(names=names, **reference_params)
             else:
                 super(ConditionalPrior, self).__init__(name=name, latex_label=latex_label,
                                                        unit=unit, **reference_params)
 
+            self.names = names
+            if self.names is not None:
+                self.num_vars = len(names)
+            else:
+                self.num_vars = 1
             self._required_variables = None
             self.condition_func = condition_func
             self._reference_params = reference_params
@@ -76,8 +85,28 @@ def conditional_prior_factory(prior_class):
             """
             from ..utils.random import rng
 
-            self.least_recently_sampled = self.rescale(rng.uniform(0, 1, size), **required_variables)
-            return self.least_recently_sampled
+            self.update_conditions(**required_variables)
+
+            if size is None:
+                size = 1
+            samps = np.zeros((size, self.num_vars))
+
+            for i in range(size):
+                vals = rng.uniform(0, 1, len(self))
+                samp = np.atleast_1d(self.rescale(vals, **required_variables))
+            samps[i, :] = samp
+
+            if self.names is not None:
+                for i, name in enumerate(self.names):
+                    if size == 1:
+                        self.current_sample[name] = samps[:, i].flatten()[0]
+                    else:
+                        self.current_sample[name] = samps[:, i].flatten()
+
+            return samps
+
+            # self.least_recently_sampled = self.rescale(rng.uniform(0, 1, size), **required_variables)
+            # return self.least_recently_sampled
 
         def rescale(self, val, **required_variables):
             """
@@ -205,6 +234,7 @@ def conditional_prior_factory(prior_class):
             instantiation_dict = super(ConditionalPrior, self).get_instantiation_dict()
             for key, value in self.reference_params.items():
                 instantiation_dict[key] = value
+            instantiation_dict["condition_func"] = self._condition_func
             return instantiation_dict
 
         def reset_to_reference_parameters(self):

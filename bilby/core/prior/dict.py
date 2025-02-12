@@ -302,6 +302,15 @@ class PriorDict(dict):
                     "Unable to parse prior, bad entry: {} "
                     "= {} of type {}".format(key, val, type(val))
                 )
+
+        if "mdn" in dictionary.keys():
+            from bilby.core.prior import ConditionalMultivariateGaussian, MDNPrior
+
+            dictionary.pop("mdn",None)
+            mdn = MDNPrior()
+            dictionary["dTpeak"] = ConditionalMultivariateGaussian(mdn, "dTpeak")
+            dictionary["ddSO"] = ConditionalMultivariateGaussian(mdn, "ddSO")
+
         self.update(dictionary)
 
     def convert_floats_to_delta_functions(self):
@@ -752,9 +761,17 @@ class ConditionalPriorDict(PriorDict):
                 continue
             if isinstance(self[key], Prior):
                 try:
-                    samples[key] = subset_dict[key].sample(
-                        size=size, **subset_dict.get_required_variables(key)
-                    )
+                    if size == None:
+                        size = 1
+
+                    samples[key] = np.zeros(size)
+                    for i in range(size):
+                        samples[key][i] = subset_dict[key].sample(
+                            size=1, **subset_dict.get_required_variables(key)
+                        )
+                    # samples[key] = subset_dict[key].sample(
+                    #     size=size, **subset_dict.get_required_variables(key)
+                    # )
                 except ValueError:
                     # Some prior classes can not handle an array of conditional parameters (e.g. alpha for PowerLaw)
                     # If that is the case, we sample each sample individually.
@@ -829,7 +846,8 @@ class ConditionalPriorDict(PriorDict):
         """
         self._prepare_evaluation(*zip(*sample.items()))
         res = [
-            self[key].ln_prob(sample[key], **self.get_required_variables(key))
+            # self[key].ln_prob(sample[key], **self.get_required_variables(key))
+            self[key].ln_prob(sample[key])
             for key in sample
         ]
         ln_prob = np.sum(res, axis=axis)

@@ -923,7 +923,7 @@ class CBCPriorDict(ConditionalPriorDict):
         =======
         bool: whether the template will fit within the segment duration
         """
-        samples = self.sample(N)
+        samples = self.sample(1)
         samples = generate_all_bbh_parameters(samples)
         durations = np.array([
             calculate_time_to_merger(
