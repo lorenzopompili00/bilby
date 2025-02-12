@@ -83,30 +83,10 @@ def conditional_prior_factory(prior_class):
             float: See superclass
 
             """
-            from ..utils.random import rng
+            from ..utils import random
 
-            self.update_conditions(**required_variables)
-
-            if size is None:
-                size = 1
-            samps = np.zeros((size, self.num_vars))
-
-            for i in range(size):
-                vals = rng.uniform(0, 1, len(self))
-                samp = np.atleast_1d(self.rescale(vals, **required_variables))
-            samps[i, :] = samp
-
-            if self.names is not None:
-                for i, name in enumerate(self.names):
-                    if size == 1:
-                        self.current_sample[name] = samps[:, i].flatten()[0]
-                    else:
-                        self.current_sample[name] = samps[:, i].flatten()
-
-            return samps
-
-            # self.least_recently_sampled = self.rescale(rng.uniform(0, 1, size), **required_variables)
-            # return self.least_recently_sampled
+            self.least_recently_sampled = self.rescale(random.rng.uniform(0, 1, size), **required_variables)
+            return self.least_recently_sampled
 
         def rescale(self, val, **required_variables):
             """
