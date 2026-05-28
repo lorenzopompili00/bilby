@@ -334,13 +334,25 @@ class GWSignalWaveformGenerator(WaveformGenerator):
         self.generator = self._create_generator()
 
     def _create_generator(self, waveform_approximant=None):
+        if waveform_approximant is None:
+            waveform_approximant = self.waveform_approximant
+
+        # Hack: use local pyseobnr plugin instead of the one in lalsimulation
+        # so that generate_fd_waveform_sequence is available.
+        _pyseobnr_approxs = {"SEOBNRv5HM", "SEOBNRv5PHM", "SEOBNRv5EHM"}
+        if waveform_approximant in _pyseobnr_approxs:
+            from pyseobnr.plugins.gwsignal_plugin import SEOBNRv5HM, SEOBNRv5PHM, SEOBNRv5EHM
+            _cls = {
+                "SEOBNRv5HM": SEOBNRv5HM,
+                "SEOBNRv5PHM": SEOBNRv5PHM,
+                "SEOBNRv5EHM": SEOBNRv5EHM,
+            }
+            return _cls[waveform_approximant]()
+
         try:
             from lalsimulation.gwsignal import gwsignal_get_waveform_generator
         except ImportError:
             raise ImportError("lalsimulation is not installed. Cannot use the GWSignal waveform generator.")
-
-        if waveform_approximant is None:
-            waveform_approximant = self.waveform_approximant
         return gwsignal_get_waveform_generator(waveform_approximant)
 
     def __getstate__(self):
@@ -508,6 +520,9 @@ class GWSignalWaveformGenerator(WaveformGenerator):
                 "pn_tidal_order",
                 "pn_phase_order",
                 "numerical_relativity_file",
+                "frequencies",
+                "frequency_bin_edges",
+                "fiducial",
         ]:
             if key in extra_args.keys():
                 del extra_args[key]
@@ -516,6 +531,54 @@ class GWSignalWaveformGenerator(WaveformGenerator):
         return gwsignal_dict
 
     def frequency_domain_strain(self, parameters):
+        # Decide between the sparse frequency-sequence path and the uniform
+        # FFT path. Two likelihoods make use of the sparse path:
+        # - MBGravitationalWaveTransient sets `frequencies` to its multiband bins.
+        # - RelativeBinningGravitationalWaveTransient sets `frequency_bin_edges`
+        # to its bin edges, and toggles `fiducial=1` when it needs full resultion
+        # for setting the reference waveform.
+        fiducial = self.waveform_arguments.get('fiducial', 0)
+        frequencies = self.waveform_arguments.get('frequencies', None)
+        if frequencies is None and fiducial != 1:
+            bin_edges = self.waveform_arguments.get('frequency_bin_edges', None)
+            if bin_edges is not None:
+                frequencies = bin_edges
+
+        if frequencies is not None:
+            return self._frequency_domain_strain_sequence(parameters, frequencies)
+
+        return self._frequency_domain_strain_uniform(parameters)
+
+    def _frequency_domain_strain_sequence(self, parameters, frequencies):
+        """Evaluate waveform at arbitrary frequencies. """
+        gwsignal_dict = self._from_bilby_parameters(**parameters)
+        # Remove keys that are not waveform parameters
+        for key in ('frequencies', 'frequency_bin_edges', 'fiducial'):
+            gwsignal_dict.pop(key, None)
+
+        catch_waveform_errors = self.waveform_arguments.get("catch_waveform_errors", False)
+        try:
+            hpc = self.generator.generate_fd_waveform_sequence(
+                frequencies=frequencies, **gwsignal_dict
+            )
+        except Exception as e:
+            if not catch_waveform_errors:
+                raise
+            else:
+                EDOM = "Input domain error" in e.args[0]
+                if EDOM:
+                    logger.warning(
+                        f"Evaluating the waveform failed with error: {e}\nThe parameters "
+                        f"were {parameters}\nLikelihood will be set to -inf."
+                    )
+                    return None
+                else:
+                    raise
+
+        hp, hc = hpc
+        return dict(plus=hp.value, cross=hc.value)
+
+    def _frequency_domain_strain_uniform(self, parameters):
         from lalsimulation.gwsignal import GenerateFDWaveform
 
         hpc = _try_waveform_call(
