@@ -339,14 +339,24 @@ class GWSignalWaveformGenerator(WaveformGenerator):
 
         # Hack: use local pyseobnr plugin instead of the one in lalsimulation
         # so that generate_fd_waveform_sequence is available.
-        _pyseobnr_approxs = {"SEOBNRv5HM", "SEOBNRv5PHM", "SEOBNRv5EHM"}
+        _pyseobnr_approxs = {"SEOBNRv5HM", "SEOBNRv5PHM", "SEOBNRv5EHM", "SEOBNRv6EHM"}
         if waveform_approximant in _pyseobnr_approxs:
-            from pyseobnr.plugins.gwsignal_plugin import SEOBNRv5HM, SEOBNRv5PHM, SEOBNRv5EHM
+            from pyseobnr.plugins.gwsignal_plugin import (
+                SEOBNRv5HM, SEOBNRv5PHM, SEOBNRv5EHM
+            )
             _cls = {
                 "SEOBNRv5HM": SEOBNRv5HM,
                 "SEOBNRv5PHM": SEOBNRv5PHM,
                 "SEOBNRv5EHM": SEOBNRv5EHM,
             }
+            try:
+                from pyseobnr.plugins.gwsignal_plugin import SEOBNRv6EHM
+                _cls["SEOBNRv6EHM"] = SEOBNRv6EHM
+                
+            except ImportError:
+                logger.warning(
+                    "SEOBNRv6EHM not found."
+                )
             return _cls[waveform_approximant]()
 
         try:
