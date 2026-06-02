@@ -352,12 +352,22 @@ class GWSignalWaveformGenerator(WaveformGenerator):
             try:
                 from pyseobnr.plugins.gwsignal_plugin import SEOBNRv6EHM
                 _cls["SEOBNRv6EHM"] = SEOBNRv6EHM
-                
+
             except ImportError:
                 logger.warning(
                     "SEOBNRv6EHM not found."
                 )
             return _cls[waveform_approximant]()
+
+        # Same hack for phenomxpy's IMRPhenomTPHM (adaptive nuFFT FD path).
+        if waveform_approximant == "IMRPhenomTPHM":
+            try:
+                from phenomxpy.gwsignal_wrapper import PyIMRPhenomTPHM
+                return PyIMRPhenomTPHM()
+            except ImportError:
+                logger.warning(
+                    "phenomxpy not installed"
+                )
 
         try:
             from lalsimulation.gwsignal import gwsignal_get_waveform_generator
